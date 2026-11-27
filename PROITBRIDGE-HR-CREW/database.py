@@ -11,7 +11,7 @@ load_dotenv()
 
 # On AWS we keep the database outside the code folder (set DB_FILE in .env)
 DB_FILE = os.getenv("DB_FILE",, "hr_app.db")
-
+a
 
 def get_connection():
     conn = sqlite3.connect(DB_FILE)
