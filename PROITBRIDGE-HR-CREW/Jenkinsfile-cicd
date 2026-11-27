@@ -1,0 +1,90 @@
+pipeline {
+    agent any
+
+    triggers {
+        githubPush()
+    }
+
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 30, unit: 'MINUTES')
+    }
+
+    environment {
+        UV = 'C:\\Users\\nived\\.local\\bin\\uv.exe'
+        UV_PYTHON = 'C:\\Users\\nived\\AppData\\Local\\Programs\\Python\\Python312\\python.exe'
+        APP_DIR = 'PROITBRIDGE-HR-CREW'
+        LIVE_URL = 'https://hr-crew-jenkins.onrender.com'
+        OPENAI_API_KEY = credentials('openai-api-key')
+        RENDER_DEPLOY_HOOK = credentials('render-deploy-hook')
+        DEEPEVAL_TELEMETRY_OPT_OUT = 'YES'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Install') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" sync --frozen'
+                }
+            }
+        }
+        stage('Code Check') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" run python -m compileall -q crew evals main.py database.py mcp_server.py'
+                }
+            }
+        }
+        stage('Database Check') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" run python -c "import database; database.init_db(); print(\'Database OK\')"'
+                }
+            }
+        }
+        stage('Health Test') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" run python -c "from fastapi.testclient import TestClient; import main; r = TestClient(main.app).get(\'/health\'); assert r.status_code == 200; print(r.json())"'
+                }
+            }
+        }
+        stage('AI Test') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" run python -m pytest evals/test_deepeval.py -k "leave-casual or prompt-injection" --junitxml=test-results.xml'
+                }
+            }
+        }
+        stage('Package') {
+            steps {
+                archiveArtifacts artifacts: "${APP_DIR}/crew/**, ${APP_DIR}/static/**, ${APP_DIR}/templates/**, ${APP_DIR}/*.py, ${APP_DIR}/requirements.txt, ${APP_DIR}/pyproject.toml, ${APP_DIR}/uv.lock"
+            }
+        }
+        stage('Deploy to Render') {
+            steps {
+                powershell 'Invoke-RestMethod -Method Post -Uri $env:RENDER_DEPLOY_HOOK | Out-Null'
+                echo "Deploy started on Render. Live URL: ${LIVE_URL}"
+            }
+        }
+    }
+
+    post {
+        always {
+            junit allowEmptyResults: true, testResults: "${APP_DIR}/test-results.xml"
+        }
+        success {
+            echo "All checks and tests passed. Render is deploying the new version to ${LIVE_URL}"
+        }
+        failure {
+            echo 'Build or tests failed. Render was not called, the live site stays on the last good version.'
+        }
+    }
+}
