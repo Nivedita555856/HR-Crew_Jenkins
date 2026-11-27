@@ -1,0 +1,15 @@
+# systemd service — keeps the FastAPI app running on EC2 (restarts on crash / reboot)
+[Unit]
+Description=ProITBridge HR Crew (FastAPI + CrewAI)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/PROITBRIDGE-HR-CREW
+EnvironmentFile=/home/ubuntu/PROITBRIDGE-HR-CREW/.env
+ExecStart=/home/ubuntu/.local/bin/uv run --frozen --no-dev uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
