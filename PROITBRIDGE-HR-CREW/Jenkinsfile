@@ -9,6 +9,8 @@ pipeline {
         UV = 'C:\\Users\\nived\\.local\\bin\\uv.exe'
         UV_PYTHON = 'C:\\Users\\nived\\AppData\\Local\\Programs\\Python\\Python312\\python.exe'
         APP_DIR = 'PROITBRIDGE-HR-CREW'
+        LIVE_DIR = 'C:\\hr-crew-live'
+        OPENAI_API_KEY = credentials('openai-api-key')
     }
 
     stages {
@@ -41,6 +43,26 @@ pipeline {
         stage('Package') {
             steps {
                 archiveArtifacts artifacts: "${APP_DIR}/crew/**, ${APP_DIR}/static/**, ${APP_DIR}/templates/**, ${APP_DIR}/*.py, ${APP_DIR}/pyproject.toml, ${APP_DIR}/uv.lock"
+            }
+        }
+        stage('Deploy') {
+            steps {
+                powershell '''
+                    Get-NetTCPConnection -LocalPort 8001 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }
+                    Start-Sleep -Seconds 2
+                    robocopy "$env:WORKSPACE\\$env:APP_DIR" $env:LIVE_DIR /MIR /XD .venv __pycache__ .crewai /XF hr_app.db .env | Out-Null
+                    Set-Location $env:LIVE_DIR
+                    & $env:UV sync --frozen
+                    $env:JENKINS_NODE_COOKIE = "dontKillMe"
+                    Start-Process -FilePath $env:UV -ArgumentList "run","python","-m","uvicorn","main:app","--host","127.0.0.1","--port","8001" -WorkingDirectory $env:LIVE_DIR -WindowStyle Hidden
+                    $ok = $false
+                    for ($i = 0; $i -lt 30; $i++) {
+                        Start-Sleep -Seconds 2
+                        try { (Invoke-WebRequest http://127.0.0.1:8001/health -UseBasicParsing).Content; $ok = $true; break } catch {}
+                    }
+                    if (-not $ok) { throw "App did not start on port 8001" }
+                    Write-Output "Live app: http://localhost:8001"
+                '''
             }
         }
     }
