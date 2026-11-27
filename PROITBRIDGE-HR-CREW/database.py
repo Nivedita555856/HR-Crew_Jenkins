@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # On AWS we keep the database outside the code folder (set DB_FILE in .env)
-DB_FILE = os.getenv("DB_FILE", "hr_app.db")
+DB_FILE = os.getenv("DB_FILE",, "hr_app.db")
 
 
 def get_connection():
