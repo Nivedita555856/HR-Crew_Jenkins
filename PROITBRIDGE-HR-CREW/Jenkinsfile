@@ -1,0 +1,47 @@
+pipeline {
+    agent any
+
+    options {
+        skipDefaultCheckout(true)
+    }
+
+    environment {
+        UV = 'C:\\Users\\nived\\.local\\bin\\uv.exe'
+        UV_PYTHON = 'C:\\Users\\nived\\AppData\\Local\\Programs\\Python\\Python312\\python.exe'
+        APP_DIR = 'PROITBRIDGE-HR-CREW'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+        stage('Install') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" sync --frozen'
+                }
+            }
+        }
+        stage('Code Check') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" run python -m compileall -q crew evals main.py database.py mcp_server.py'
+                }
+            }
+        }
+        stage('Database Check') {
+            steps {
+                dir("${APP_DIR}") {
+                    bat '"%UV%" run python -c "import database; database.init_db(); print(\'Database OK\')"'
+                }
+            }
+        }
+        stage('Package') {
+            steps {
+                archiveArtifacts artifacts: "${APP_DIR}/crew/**, ${APP_DIR}/static/**, ${APP_DIR}/templates/**, ${APP_DIR}/*.py, ${APP_DIR}/pyproject.toml, ${APP_DIR}/uv.lock"
+            }
+        }
+    }
+}
